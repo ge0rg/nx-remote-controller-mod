@@ -22,6 +22,18 @@ static char s_wifi_ip_address[32];
 static DiscoveredCameraInfo s_cameras[MAX_NUM_CAMERAS];
 static pthread_mutex_t s_mutex;
 
+int do_siocgifaddr(int sock, char *ifname, struct ifreq *ifr) {
+    strncpy(ifr->ifr_name, ifname, IFNAMSIZ-1);
+    if (ioctl(sock, SIOCGIFADDR, ifr) == -1) {
+        return -1;
+    } else {
+        close(sock);
+        strncpy(s_wifi_ip_address,
+                inet_ntoa(((struct sockaddr_in *)&ifr->ifr_addr)->sin_addr),
+                sizeof(s_wifi_ip_address));
+        return 0;
+    }
+}
 const char *network_get_wifi_ip_address(void)
 {
     int sock;
@@ -31,24 +43,17 @@ const char *network_get_wifi_ip_address(void)
 
     ifr.ifr_addr.sa_family = AF_INET;
 
-    if (is_new_nx_model()) {
-        strncpy(ifr.ifr_name, "mlan0", IFNAMSIZ-1);
-    } else {
-        strncpy(ifr.ifr_name, "wlan0", IFNAMSIZ-1);
-    }
-    if (ioctl(sock, SIOCGIFADDR, &ifr) == -1) {
+    if (0 == do_siocgifaddr(sock, "uap0", &ifr))
+        return s_wifi_ip_address;
+    else if (0 == do_siocgifaddr(sock, "mlan0", &ifr))
+        return s_wifi_ip_address;
+    else if (0 == do_siocgifaddr(sock, "wlan0", &ifr))
+        return s_wifi_ip_address;
+    else {
         print_error("ioctl() failed");
         s_wifi_ip_address[0] = '\0';
         return NULL;
     }
-
-    close(sock);
-
-    strncpy(s_wifi_ip_address,
-            inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr),
-            sizeof(s_wifi_ip_address));
-
-    return s_wifi_ip_address;
 }
 
 static void put_camera(const char *ip_addr, int port, const char *packet)
